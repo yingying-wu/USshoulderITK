@@ -1,0 +1,255 @@
+  //--------------------------
+  // Get long edge of prostate
+  //--------------------------
+  
+  //
+  // ChangeInformationImageFilter - shift to right-most column, middle row i.e. center of probe
+  //
+  ChangeOriginFilterType::Pointer probeOriginFilter = ChangeOriginFilterType::New();
+  
+  // value where the output image origin should start i.e. start value of output image sampling
+  InternalITKImageType::PointType probeOrigin;
+  probeOrigin[0] = -( inputImageSizeX - inputImageSpacing );
+  probeOrigin[1] = -( floor( inputImageSizeY / 2 ) - inputImageSpacing );
+  probeOriginFilter->ChangeOriginOn();
+  probeOriginFilter->SetOutputOrigin( probeOrigin );
+
+  probeOriginFilter->SetInput( medianFilter->GetOutput() );
+  probeOriginFilter->Update();
+  
+  /*
+  InternalITKImageType::Pointer probeOriginImage = probeOriginFilter->GetOutput();
+  printf("probeOriginImage size %d %d\n", probeOriginImage->GetLargestPossibleRegion().GetSize()[0], probeOriginImage->GetLargestPossibleRegion().GetSize()[1] );
+  printf("probeOriginImage spacing %f %f\n", probeOriginImage->GetSpacing()[0], probeOriginImage->GetSpacing()[1] );
+  printf("probeOriginImage origin %f %f\n", probeOriginImage->GetOrigin()[0], probeOriginImage->GetOrigin()[1] );
+  
+  // Show image
+  sitk::Show( sitk::Image( probeOriginFilter->GetOutput() ) );
+  */
+
+  //
+  // ResampleImageFilter - PolarToCartesianTransform
+  // everything in spatial coordinates i.e. mm
+  //
+  ResampleFilterType::Pointer polarResampleFilter = ResampleFilterType::New();
+
+  PolarTransformType::Pointer polarTransform = PolarTransformType::New();
+  polarResampleFilter->SetTransform( polarTransform );
+  
+  InterpolatorType::Pointer polarInterpolator = InterpolatorType::New();
+  polarResampleFilter->SetInterpolator( polarInterpolator );
+
+  polarResampleFilter->SetDefaultPixelValue( 0 );
+  
+  // make theta resolution half a degree
+  // make r the same spatial resolution as input image
+  double polarSpacing[ 2 ] = { thetaResolution, inputImageSpacing }; // (theta, r) pixel spacing in millimeters
+  polarResampleFilter->SetOutputSpacing( polarSpacing );
+  
+  // value where the output image origin should start i.e. start value of output image sampling
+  // theta range from pi/2 to 3*pi/2 since origin is on rightmost column
+  double polarOrigin[ 2 ] = { PI/2, 0.0 }; // (theta, r) space coordinate of origin
+  polarResampleFilter->SetOutputOrigin( polarOrigin );
+
+  InternalITKImageType::SizeType polarSize = { 360, 512 }; // (theta, r) number of pixels
+  polarResampleFilter->SetSize( polarSize );
+  
+  polarResampleFilter->SetInput( probeOriginFilter->GetOutput() );
+  polarResampleFilter->Update();
+  
+  /*
+  InternalITKImageType::Pointer polarImage = polarResampleFilter->GetOutput();
+  printf("polarImage size %d %d\n", polarImage->GetLargestPossibleRegion().GetSize()[0], polarImage->GetLargestPossibleRegion().GetSize()[1] );
+  printf("polarImage spacing %f %f\n", polarImage->GetSpacing()[0], polarImage->GetSpacing()[1] );
+  printf("polarImage origin %f %f\n", polarImage->GetOrigin()[0], polarImage->GetOrigin()[1] );
+  
+  // Show image
+  sitk::Show( sitk::Image( polarResampleFilter->GetOutput() ) );
+  */
+
+  //
+  // CropImageFilter
+  //
+  CropImageFilterType::Pointer cropFilter = CropImageFilterType::New();
+
+  InternalITKImageType::SizeType upperCropSize = { 0, 0 };  
+  InternalITKImageType::SizeType lowerCropSize = { 0, 100 };
+  cropFilter->SetUpperBoundaryCropSize( upperCropSize );
+  cropFilter->SetLowerBoundaryCropSize( lowerCropSize );
+
+  cropFilter->SetInput( polarResampleFilter->GetOutput() );
+  
+  /*
+  InternalITKImageType::Pointer cropImage = cropFilter->GetOutput();
+  printf("cropImage size %d %d\n", cropImage->GetLargestPossibleRegion().GetSize()[0], cropImage->GetLargestPossibleRegion().GetSize()[1] );
+  printf("cropImage spacing %f %f\n", cropImage->GetSpacing()[0], cropImage->GetSpacing()[1] );
+  printf("cropImage origin %f %f\n", cropImage->GetOrigin()[0], cropImage->GetOrigin()[1] );
+  
+  // Show image
+  sitk::Show( sitk::Image( cropFilter->GetOutput() ) );
+  */
+
+  //
+  // RecursiveGaussianImageFilter - Smooth THETA
+  //
+  GaussianFilterType::Pointer gaussianFilter = GaussianFilterType::New();
+
+  gaussianFilter->SetSigma( atof(argv[2]) ); 
+  gaussianFilter->SetDirection( 0 ); // (theta, r)
+  gaussianFilter->SetNormalizeAcrossScale( true );
+
+  gaussianFilter->SetInput( cropFilter->GetOutput() );
+  gaussianFilter->Update();
+  
+  /*
+  InternalITKImageType::Pointer gaussianImage = gaussianFilter->GetOutput();
+  printf("gaussianImage size %d %d\n", gaussianImage->GetLargestPossibleRegion().GetSize()[0], gaussianImage->GetLargestPossibleRegion().GetSize()[1] );
+  printf("gaussianImage spacing %f %f\n", gaussianImage->GetSpacing()[0], gaussianImage->GetSpacing()[1] );
+  printf("gaussianImage origin %f %f\n", gaussianImage->GetOrigin()[0], gaussianImage->GetOrigin()[1] );
+  
+  // Show image
+  sitk::Show( sitk::Image( gaussianFilter->GetOutput() ) );
+  */
+
+  // 
+  // DerivativeImageFilter - find gradient along RADIUS
+  //
+  FilterType::Pointer derivativeFilter = FilterType::New();
+
+  derivativeFilter->SetOrder( 1 );
+  derivativeFilter->SetDirection( 1 ); // (theta,r)
+
+  derivativeFilter->SetInput( gaussianFilter->GetOutput() );  
+  derivativeFilter->Update();
+
+  /*
+  InternalITKImageType::Pointer derivativeImage = derivativeFilter->GetOutput();
+  printf("derivativeImage size %d %d\n", derivativeImage->GetLargestPossibleRegion().GetSize()[0], derivativeImage->GetLargestPossibleRegion().GetSize()[1] );
+  printf("derivativeImage spacing %f %f\n", derivativeImage->GetSpacing()[0], derivativeImage->GetSpacing()[1] );
+  printf("derivativeImage origin %f %f\n", derivativeImage->GetOrigin()[0], derivativeImage->GetOrigin()[1] );
+  
+  // Show image
+  sitk::Show( sitk::Image( derivativeFilter->GetOutput() ) );
+  */
+
+  //
+  // ResampleImageFilter - CartesianToPolarTransform 
+  //
+  ResampleFilterType::Pointer cartesianResampleFilter = ResampleFilterType::New();
+ 
+  CartesianTransformType::Pointer cartesianTransform = CartesianTransformType::New();
+  cartesianResampleFilter->SetTransform( cartesianTransform );
+  
+  InterpolatorType::Pointer cartesianInterpolator = InterpolatorType::New();
+  cartesianResampleFilter->SetInterpolator( cartesianInterpolator );
+  
+  cartesianResampleFilter->SetDefaultPixelValue( 0 );
+  
+  // make it back to same spacing as input image
+  double cartesianSpacing[ 2 ] = { inputImageSpacing, inputImageSpacing }; // (x, y) pixel spacing in millimeters
+  cartesianResampleFilter->SetOutputSpacing( cartesianSpacing );
+  
+  double cartesianOrigin[ 2 ]; // (x, y) space coordinate of origin 
+  cartesianOrigin[0] = probeOrigin[0]; 
+  cartesianOrigin[1] = probeOrigin[1]; 
+  cartesianResampleFilter->SetOutputOrigin( cartesianOrigin );
+  
+  InternalITKImageType::SizeType cartesianSize = { inputImageSizeX, inputImageSizeY }; // (x, y) number of pixels 
+  cartesianResampleFilter->SetSize( cartesianSize );
+  
+  cartesianResampleFilter->SetInput( derivativeFilter->GetOutput() );
+  cartesianResampleFilter->Update();
+  
+  /*
+  InternalITKImageType::Pointer cartesianImage = cartesianResampleFilter->GetOutput();
+  printf("cartesianImage size %d %d\n", cartesianImage->GetLargestPossibleRegion().GetSize()[0], cartesianImage->GetLargestPossibleRegion().GetSize()[1] );
+  printf("cartesianImage spacing %f %f\n", cartesianImage->GetSpacing()[0], cartesianImage->GetSpacing()[1] );
+  printf("cartesianImage origin %f %f\n", cartesianImage->GetOrigin()[0], cartesianImage->GetOrigin()[1] );
+  
+  // Show image
+  sitk::Show( sitk::Image( cartesianResampleFilter->GetOutput() ) );
+  */
+
+  //
+  // ResampleImageFilter - CartesianToPolarTransform after blur along theta
+  //
+  ResampleFilterType::Pointer cartesianResampleFilterBlurred = ResampleFilterType::New();
+ 
+  CartesianTransformType::Pointer cartesianTransformBlurred = CartesianTransformType::New();
+  cartesianResampleFilterBlurred->SetTransform( cartesianTransformBlurred );
+  
+  InterpolatorType::Pointer cartesianInterpolatorBlurred = InterpolatorType::New();
+  cartesianResampleFilterBlurred->SetInterpolator( cartesianInterpolatorBlurred );
+  
+  cartesianResampleFilterBlurred->SetDefaultPixelValue( 0 );
+  
+  // use same setting as the transformation after derivative
+  cartesianResampleFilterBlurred->SetOutputSpacing( cartesianSpacing );  
+  cartesianResampleFilterBlurred->SetOutputOrigin( cartesianOrigin );
+  cartesianResampleFilterBlurred->SetSize( cartesianSize );
+  
+  cartesianResampleFilterBlurred->SetInput( gaussianFilter->GetOutput() );
+  cartesianResampleFilterBlurred->Update();
+  
+  InternalITKImageType::Pointer cartesianImageBlurred = cartesianResampleFilterBlurred->GetOutput();
+  printf("cartesianImageBlurred size %d %d\n", cartesianImageBlurred->GetLargestPossibleRegion().GetSize()[0], cartesianImageBlurred->GetLargestPossibleRegion().GetSize()[1] );
+  printf("cartesianImageBlurred spacing %f %f\n", cartesianImageBlurred->GetSpacing()[0], cartesianImageBlurred->GetSpacing()[1] );
+  printf("cartesianImageBlurred origin %f %f\n", cartesianImageBlurred->GetOrigin()[0], cartesianImageBlurred->GetOrigin()[1] );
+  
+  // Show image
+  sitk::Show( sitk::Image( cartesianResampleFilterBlurred->GetOutput() ) );
+  
+
+  
+  
+  
+  
+  //
+  // AbsImageFilter
+  //
+  AbsFilterType::Pointer absFilter = AbsFilterType::New();
+  absFilter->SetInput( cartesianResampleFilter->GetOutput() );
+  absFilter->Update();
+  
+  /*
+  InternalITKImageType::Pointer absImage = absFilter->GetOutput();
+  printf("absImage size %d %d\n", absImage->GetLargestPossibleRegion().GetSize()[0], absImage->GetLargestPossibleRegion().GetSize()[1] );
+  printf("absImage spacing %f %f\n", absImage->GetSpacing()[0], absImage->GetSpacing()[1] );
+  printf("absImage origin %f %f\n", absImage->GetOrigin()[0], absImage->GetOrigin()[1] );
+  
+  // Show image
+  sitk::Show( sitk::Image( absFilter->GetOutput() ) );
+  */
+
+  //
+  // StatisticsImageFilter
+  //
+  
+  StatisticsImageFilterType::Pointer statisticsFilter = StatisticsImageFilterType::New();
+  statisticsFilter->SetInput( absFilter->GetOutput() );
+  statisticsFilter->Update();
+  
+  printf("Max: %f\nMin: %f\nMean: %f\nSD: %f\n\n", 
+			statisticsFilter->GetMaximum(), statisticsFilter->GetMinimum(), 
+			statisticsFilter->GetMean(), statisticsFilter->GetSigma());
+  
+  // 
+  // BinaryThresholdImageFilter
+  //
+  BinaryThresholdImageFilterType::Pointer binaryFilter = BinaryThresholdImageFilterType::New();
+
+  binaryFilter->SetInsideValue( 255 );
+  binaryFilter->SetOutsideValue( 0 );
+  binaryFilter->SetLowerThreshold( statisticsFilter->GetMean() + atof(argv[3]) * statisticsFilter->GetSigma() );
+  binaryFilter->SetUpperThreshold( statisticsFilter->GetMaximum() );
+
+  binaryFilter->SetInput( absFilter->GetOutput() );
+  binaryFilter->Update();
+  
+  InternalITKImageType::Pointer binaryImage = binaryFilter->GetOutput();
+  printf("binaryImage size %d %d\n", binaryImage->GetLargestPossibleRegion().GetSize()[0], binaryImage->GetLargestPossibleRegion().GetSize()[1] );
+  printf("binaryImage spacing %f %f\n", binaryImage->GetSpacing()[0], binaryImage->GetSpacing()[1] );
+  printf("binaryImage origin %f %f\n", binaryImage->GetOrigin()[0], binaryImage->GetOrigin()[1] );
+  
+  // Show image
+  sitk::Show( sitk::Image( binaryFilter->GetOutput() ) );
