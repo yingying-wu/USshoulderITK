@@ -399,7 +399,7 @@ int main(int argc, char * argv[] )
 	typedef itk::RecursiveGaussianImageFilter< SliceImageType, SliceImageType > GaussianFilterType;
 	GaussianFilterType::Pointer gaussianFilterX = GaussianFilterType::New();
 
-	gaussianFilterX->SetSigma( midStatisticsFilter->GetSigma() / atof(argv[2]) ); 
+	gaussianFilterX->SetSigma( atof(argv[2]) ); 
 	gaussianFilterX->SetDirection( 0 ); 
 	gaussianFilterX->SetNormalizeAcrossScale( true );
 
@@ -415,7 +415,7 @@ int main(int argc, char * argv[] )
 	gaussianFilterY->SetInput( gaussianFilterX->GetOutput() );
 	gaussianFilterY->Update();
 
-	printf("\nGaussian blur %f\n", midStatisticsFilter->GetSigma() / atof(argv[2]) );
+	printf("\nGaussian blur %f\n", atof(argv[2]) );
 	sitk::Show( sitk::Image( gaussianFilterY->GetOutput() ) );
 	}
   
