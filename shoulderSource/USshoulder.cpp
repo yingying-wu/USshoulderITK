@@ -408,7 +408,7 @@ int main(int argc, char * argv[] )
 
 	GaussianFilterType::Pointer gaussianFilterY = GaussianFilterType::New();
 
-	gaussianFilterY->SetSigma( midStatisticsFilter->GetSigma() / atof(argv[2]) ); 
+	gaussianFilterY->SetSigma( atof(argv[2]) ); 
 	gaussianFilterY->SetDirection( 1 ); 
 	gaussianFilterY->SetNormalizeAcrossScale( true );
 
