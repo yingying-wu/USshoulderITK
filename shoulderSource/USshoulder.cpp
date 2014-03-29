@@ -1,3 +1,7 @@
+/*
+parameters
+radius of MedianImageFilter = 6
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,472 +14,308 @@
 #include "itkImage.h"
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
+#include "itkImageKernelOperator.h"
 
 #include "vnl/vnl_math.h"
 
 #include "itkMedianImageFilter.h"
-#include "itkChangeInformationImageFilter.h"
-#include "itkRecursiveGaussianImageFilter.h"
-
-#include "itkStatisticsImageFilter.h"
-#include "itkSigmoidImageFilter.h"
-#include "itkIntensityWindowingImageFilter.h"
-
 #include "itkResampleImageFilter.h"
+#include "itkCropImageFilter.h"
+#include "itkRecursiveGaussianImageFilter.h"
+#include "itkStatisticsImageFilter.h"
+#include "itkIntensityWindowingImageFilter.h"
+#include "itkSigmoidImageFilter.h"
+#include "itkAddImageFilter.h"
 #include "itkTranslationTransform.h"
 #include "itkLinearInterpolateImageFunction.h"
-#include "itkCropImageFilter.h"
-#include "itkAddImageFilter.h"
-
 #include "itkImageRegionIterator.h"
+#include "itkExtractImageFilter.h"
 
-// define mathematical constant
+#include "itkImageDuplicator.h"
+
 const double PI = 3.14159265359;
-
-// using SimpleITK for simple procedures like reading in images and showing images in imageJ
 namespace sitk = itk::simple;
-
-// define a few global typedefs that are repeatedly used to define images and classes
 typedef itk::Image< float, 2 > SliceImageType;
 
-// make theta resolution in polar coordinates half a degree
-const double thetaResolution = PI/360;
 
-
-int main(int argc, char * argv[] )
+int main( int argc, char * argv[] )
 {
-	// make sure enough arguments are passed into exe
-	if( argc < 2 )
-	{
-	std::cerr << "Usage: " << std::endl;
-	std::cerr << argv[0] << "USshoulder.exe (radius of MedianFilter) (parameters)"<< std::endl;
-	return EXIT_FAILURE;
-	}
-	
-							
+  if( argc < 2 )
+    {
+    std::cerr << "Usage: " << std::endl;
+    std::cerr << argv[0] << " USshoulder.exe"<< std::endl;
+    return EXIT_FAILURE;
+    }
+
+  // declare typedefs here
+  	typedef itk::ImageFileReader<SliceImageType> SliceReader;
+	typedef itk::ExtractImageFilter< SliceImageType, SliceImageType > ExtractFilterType;
+	typedef itk::MedianImageFilter< SliceImageType, SliceImageType >  MedianFilterType;
+	typedef itk::ExtractImageFilter< SliceImageType, SliceImageType > ExtractFilterType;
+	typedef itk::AddImageFilter < SliceImageType, SliceImageType > AddFilterType;
+	typedef itk::ResampleImageFilter<SliceImageType, SliceImageType> ResampleFilterType;
+	typedef itk::TranslationTransform< double, 2 >  TransformType;
+
+
 	//-----------------------
 	// Read and process image
 	//-----------------------
 
 	std::string filename = "c:\\miia\\yingyinw\\USshoulder\\shoulderSource\\yy_3_26_2014_36.png";
 	std::string filterType = argv[1];
-
-	typedef itk::ImageFileReader<SliceImageType> SliceReader;
+  
 	SliceReader::Pointer reader = SliceReader::New();
 	reader->SetFileName(filename);
 	reader->Update();
-	
+
 	SliceImageType::Pointer inputImage = SliceImageType::New();
 	inputImage = reader->GetOutput();
 	SliceImageType::SizeType inputImageSize;
 	inputImageSize[0] = inputImage->GetLargestPossibleRegion().GetSize()[0];
 	inputImageSize[1] = inputImage->GetLargestPossibleRegion().GetSize()[1];
-  
+	
 	printf("Original image size %d %d\n", inputImageSize[0], inputImageSize[1]);
 	printf("Image spacing %f %f\n", reader->GetOutput()->GetSpacing()[0], reader->GetOutput()->GetSpacing()[1] );
-    		
-	//sitk::Show( sitk::Image( inputImage ) );
+	//sitk::Show( sitk::Image( reader->GetOutput() ) );
 
-	// interpolator - the same used for all 
-	typedef itk::LinearInterpolateImageFunction<SliceImageType, double> InterpolatorType;
-	InterpolatorType::Pointer interpolator = InterpolatorType::New();
-	  
+	
+	//
+	// Crop Original Screen Image
+	//
+	
 	// hard code screen borders
 	int screenX1 = 192;
 	int screenX2 = 588;
 	int screenY1 = 31;
 	int screenY2 = 411;
 
-	// cropsize value is the amount removed on one side
-	SliceImageType::SizeType screenCropSize;
-	screenCropSize[0] = (inputImageSize[0]-(screenX2-screenX1))/2;
-	screenCropSize[1] = (inputImageSize[1]-(screenY2-screenY1))/2;
-	//printf("Screen crop %d %d\n", screenCropSize[0], screenCropSize[1]);
+	SliceImageType::IndexType screenStart;
+	screenStart[0] = screenX1;
+	screenStart[1] = screenY1; 
+	SliceImageType::SizeType screenSize;
+	screenSize[0] = screenX2 - screenX1;
+	screenSize[1] = screenY2 - screenY1; 
+	SliceImageType::RegionType desiredRegionScreen( screenStart, screenSize );
 
-	//
-	// ResampleImageFilter 
-	//
-	
-	typedef itk::TranslationTransform< double, 2 >  TransformType;
-	TransformType::Pointer screenCropShift = TransformType::New();
-	TransformType::OutputVectorType screenTranslation;
-	screenTranslation[0] = -int( (screenCropSize[0])-screenX1 );
-	screenTranslation[1] = -int( (screenCropSize[1])-screenY1 ); 
-	screenCropShift->Translate( screenTranslation );
-	//printf("Screen translation %f %f\n", screenTranslation[0], screenTranslation[1]);
-				
-	typedef itk::ResampleImageFilter<SliceImageType, SliceImageType> ResampleFilterType;
-	ResampleFilterType::Pointer screenResampler = ResampleFilterType::New();
-	screenResampler->SetTransform( screenCropShift );	
-	screenResampler->SetInterpolator( interpolator );	
-	screenResampler->SetSize( inputImageSize );
-	screenResampler->SetDefaultPixelValue( 0 );
-	screenResampler->SetInput( inputImage );
-	screenResampler->Update();	
-	//sitk::Show( sitk::Image( screenResampler->GetOutput() ) );
-	
-	//
-	// CropImageFilter
-	//
-	typedef itk::CropImageFilter <SliceImageType, SliceImageType> CropImageFilterType;
-	CropImageFilterType::Pointer screenCropFilter = CropImageFilterType::New();
+	ExtractFilterType::Pointer extractFilterScreen = ExtractFilterType::New();
+	extractFilterScreen->SetExtractionRegion( desiredRegionScreen );
+	extractFilterScreen->SetInput( inputImage );
+	extractFilterScreen->SetDirectionCollapseToIdentity(); // This is required.
 
-	screenCropFilter->SetBoundaryCropSize( screenCropSize );
-	screenCropFilter->SetInput( screenResampler->GetOutput() );
-	screenCropFilter->Update();
+	//sitk::Show( sitk::Image( extractFilterScreen->GetOutput() ) );
+	extractFilterScreen->Update();
 
-	// change pointer to cropped image. update image size
 	SliceImageType::Pointer croppedImage = SliceImageType::New();
-	croppedImage = screenCropFilter->GetOutput();
-	//sitk::Show( sitk::Image( croppedImage ) );
+	croppedImage = extractFilterScreen->GetOutput();
+	printf("\nExtracted image from screenshot\n");
+	printf("Extracted image size %d %d\n", croppedImage->GetLargestPossibleRegion().GetSize()[0], croppedImage->GetLargestPossibleRegion().GetSize()[1]);
+
 	SliceImageType::SizeType croppedImageSize;
 	croppedImageSize[0] = croppedImage->GetLargestPossibleRegion().GetSize()[0];
 	croppedImageSize[1] = croppedImage->GetLargestPossibleRegion().GetSize()[1];
 	//printf("Cropped image size %d %d\n", croppedImageSize[0], croppedImageSize[1]);
-
-
-	printf("\nImage cropped to ultrasound data\n");
-	// origin offset after cropping
-	SliceImageType::PointType newOrigin;
-	newOrigin[0] = screenX1-screenTranslation[0];
-	newOrigin[1] = screenY1-screenTranslation[1];
-
-	//-------------------------
-	// Create image section top
-	//-------------------------
-
-
-	int topX1 = 115;
-	int topX2 = 285;
-	int topY1 = 1;
-	int topY2 = 181;
 	
-	// cropsize value is the amount removed on one side
-	SliceImageType::SizeType cropSize1;
-	cropSize1[0] = ( croppedImageSize[0]-(topX2-topX1) )/2;
-	cropSize1[1] = ( croppedImageSize[1]-(topY2-topY1) )/2;
-	//printf("\nTop section crop %d %d\n", cropSize1[0], cropSize1[1]);
-	
-	//
-	// ResampleImageFilter 
-	//
-	
-	// translate
-	TransformType::Pointer cropShift1 = TransformType::New();
-	TransformType::OutputVectorType translation1;
-	translation1[0] = -int( (cropSize1[0])-topX1 );
-	translation1[1] = -int( (cropSize1[1])-topY1 );
-	cropShift1->Translate( translation1 );
-	//printf("\nTop section translation x:%f y:%f\n", translation1[0], translation1[1]);
-	
-				
-	ResampleFilterType::Pointer resampler1 = ResampleFilterType::New();
-	resampler1->SetTransform( cropShift1 );	
-	resampler1->SetInterpolator( interpolator );	
-	resampler1->SetSize( croppedImageSize );
-	resampler1->SetOutputOrigin( newOrigin );
-	resampler1->SetDefaultPixelValue( 0 );
-	resampler1->SetInput( croppedImage );
-	resampler1->Update();	
-	//printf("resampler1 %d %d", resampler1->GetOutput()->GetLargestPossibleRegion().GetSize()[0], resampler1->GetOutput()->GetLargestPossibleRegion().GetSize()[1]);
-	//sitk::Show( sitk::Image( resampler1->GetOutput() ) );
-	
+
+	typedef itk::ImageDuplicator< SliceImageType > DuplicatorType;
+    DuplicatorType::Pointer duplicator = DuplicatorType::New();
+    duplicator->SetInputImage(croppedImage);
+    duplicator->Update();
+    SliceImageType::Pointer clonedImage = duplicator->GetOutput();
+	printf("\nCloned image\n");
+	printf("Cloned image size %d %d\n", clonedImage->GetLargestPossibleRegion().GetSize()[0], clonedImage->GetLargestPossibleRegion().GetSize()[1]);
 
 	//
-	// CropImageFilter
+	// Crop Top Bright Image
 	//
-	CropImageFilterType::Pointer cropFilter1 = CropImageFilterType::New();
-	cropFilter1->SetBoundaryCropSize( cropSize1 );
-	cropFilter1->SetInput( resampler1->GetOutput() );
-	//sitk::Show( sitk::Image( cropFilter1->GetOutput() ));
-		
-	TransformType::Pointer cropShiftInv1 = TransformType::New();
-	TransformType::OutputVectorType translationInv1;
-	translationInv1[0] = -translation1[0];
-	translationInv1[1] = -translation1[1];
-	cropShiftInv1->Translate( translationInv1 );
+	
+	// hard code screen borders
+	int topX1 = 115 + screenX1;
+	int topX2 = 285 + screenX1;
+	int topY1 = 1 + screenY1;
+	int topY2 = 181 + screenY1;
 
-	ResampleFilterType::Pointer resamplerInvert1 = ResampleFilterType::New();
-	resamplerInvert1->SetTransform( cropShiftInv1 );	
-	resamplerInvert1->SetInterpolator( interpolator );	
-	resamplerInvert1->SetSize( croppedImageSize );
-	resamplerInvert1->SetOutputOrigin( newOrigin );
-	resamplerInvert1->SetDefaultPixelValue( 0 );
-	resamplerInvert1->SetInput( cropFilter1->GetOutput() );
-	resamplerInvert1->Update();	
-	//sitk::Show( sitk::Image( resamplerInvert1->GetOutput() ));
-	
+	SliceImageType::IndexType topStart;
+	topStart[0] = topX1;
+	topStart[1] = topY1; 
+	SliceImageType::SizeType topSize;
+	topSize[0] = topX2 - topX1;
+	topSize[1] = topY2 - topY1; 
+	SliceImageType::RegionType desiredRegionTop( topStart, topSize );
 
-	SliceImageType::Pointer topSection = SliceImageType::New();
-	topSection = resamplerInvert1->GetOutput();
-	//sitk::Show( sitk::Image( topSection ) );
-	printf("\nTop section cropped\n");
+	ExtractFilterType::Pointer extractFilterTop = ExtractFilterType::New();
+	extractFilterTop->SetExtractionRegion( desiredRegionTop );
+	extractFilterTop->SetInput( croppedImage );
+	extractFilterTop->SetDirectionCollapseToIdentity(); // This is required.
 
-	
-	//-------------------------
-	// Create image section bot
-	//-------------------------
-	
-	/*DuplicatorType::Pointer duplicatorBot = DuplicatorType::New();
-	duplicatorBot->SetInputImage( croppedImage );
-	duplicatorBot->Update();
-	SliceImageType::Pointer botCopy = duplicatorBot->GetOutput();
-	printf("\nbotCopy %f %f\n", botCopy->GetLargestPossibleRegion().GetSize()[0], botCopy->GetLargestPossibleRegion().GetSize()[1]);
-	printf("\nDuplicated cropped image\n");
-	sitk::Show( sitk::Image( botCopy ));
-	*/
-	int botX1 = 98;
-	int botX2 = 303;
-	int botY1 = 181;
-	int botY2 = 380;
-	
-	// cropsize value is the amount removed on one side
-	SliceImageType::SizeType cropSize2;
-	cropSize2[0] = ( croppedImageSize[0]-(botX2-botX1) )/2;
-	cropSize2[1] = ( croppedImageSize[1]-(botY2-botY1) )/2;
-	
-	//
-	// ResampleImageFilter 
-	//
+	//sitk::Show( sitk::Image( extractFilterTop->GetOutput() ) );
+	extractFilterTop->Update();
+
+	SliceImageType::Pointer topImage = SliceImageType::New();
+	topImage = extractFilterTop->GetOutput();
+	printf("\nTop image\n");
+	printf("Top image size %d %d\n", topImage->GetLargestPossibleRegion().GetSize()[0], topImage->GetLargestPossibleRegion().GetSize()[1]);
 
 	// translate	
-	TransformType::Pointer cropShift2 = TransformType::New();
-	TransformType::OutputVectorType translation2;
-	translation2[0] = -int( (cropSize2[0])-botX1 );
-	translation2[1] = -int( (cropSize2[1])-botY1 );
-	cropShift2->Translate( translation2 );
-	//printf("\nBottom section translation x:%f y:%f\n", translation2[0], translation2[1]);
-				
-
-	ResampleFilterType::Pointer resampler2 = ResampleFilterType::New();
-	resampler2->SetTransform( cropShift2 );	
-	resampler2->SetInterpolator( interpolator );	
-	resampler2->SetSize( croppedImageSize );
-	resampler2->SetOutputOrigin( newOrigin );
-	resampler2->SetDefaultPixelValue( 0 );
-	resampler2->SetInput( croppedImage );
-	resampler2->Update();	
+	TransformType::Pointer cropShift = TransformType::New();
+	TransformType::OutputVectorType translation;
+	translation[0] = -int( topX1 );
+	translation[1] = -int( topX2 );
+	cropShift->Translate( translation );
+	//printf("\nBottom section translation x:%f y:%f\n", translation2[0], translation2[1]);		
 	
+	SliceImageType::PointType newOrigin;
+	newOrigin[0] = screenX1+topX1;
+	newOrigin[1] = screenY1+topX2;
 
-	//
-	// CropImageFilter
-	//
-	CropImageFilterType::Pointer cropFilter2 = CropImageFilterType::New();
-	cropFilter2->SetBoundaryCropSize( cropSize2 );
-	cropFilter2->SetInput( resampler2->GetOutput() );
+	// interpolator
+	typedef itk::LinearInterpolateImageFunction<SliceImageType, double> InterpolatorType;
+	InterpolatorType::Pointer interpolator = InterpolatorType::New();
 
-	TransformType::Pointer cropShiftInv2 = TransformType::New();
-	TransformType::OutputVectorType translationInv2;
-	translationInv2[0] = -translation2[0];
-	translationInv2[1] = -translation2[1];
-	cropShiftInv2->Translate( translationInv2 );
-
-
-	ResampleFilterType::Pointer resamplerInvert2 = ResampleFilterType::New();
-	resamplerInvert2->SetTransform( cropShiftInv2 );	
-	resamplerInvert2->SetInterpolator( interpolator );	
-	resamplerInvert2->SetSize( croppedImageSize );
-	resamplerInvert2->SetOutputOrigin( newOrigin );
-	resamplerInvert2->SetDefaultPixelValue( 0 );
-	resamplerInvert2->SetInput( cropFilter2->GetOutput() );
-	resamplerInvert2->Update();	
-	//sitk::Show( sitk::Image( resamplerInvert2->GetOutput() ));
+	ResampleFilterType::Pointer resamplerTop = ResampleFilterType::New();
+	resamplerTop->SetTransform( cropShift );	
+	resamplerTop->SetInterpolator( interpolator );	
+	resamplerTop->SetSize( croppedImageSize );
+	resamplerTop->SetOutputOrigin( newOrigin );
+	resamplerTop->SetDefaultPixelValue( 0 );
+	resamplerTop->SetInput( extractFilterTop->GetOutput() );
 	
+	//sitk::Show( sitk::Image( resampler->GetOutput() ) );
+	resamplerTop->Update();	
 
-	SliceImageType::Pointer botSection = SliceImageType::New();
-	botSection = resamplerInvert2->GetOutput();
-	//sitk::Show( sitk::Image( botSection ) );
-	printf("\nBotton section cropped\n");
+	SliceImageType::Pointer topImageShifted = resamplerTop->GetOutput();
 
 	//
-	// Add images
+	// Crop Bottom Bright Image
 	//
-	typedef itk::AddImageFilter < SliceImageType, SliceImageType > AddFilterType;
+	
+	// hard code screen borders
+	int botX1 = 98 + screenX1;
+	int botX2 = 303 + screenX1;
+	int botY1 = 181 + screenY1;
+	int botY2 = 380 + screenY1;
+
+	SliceImageType::IndexType botStart;
+	botStart[0] = botX1;
+	botStart[1] = botY1; 
+	SliceImageType::SizeType botSize;
+	botSize[0] = botX2 - botX1;
+	botSize[1] = botY2 - botY1; 
+	SliceImageType::RegionType desiredRegionBot( botStart, botSize );
+
+	ExtractFilterType::Pointer extractFilterBot = ExtractFilterType::New();
+	extractFilterBot->SetExtractionRegion( desiredRegionBot );
+	extractFilterBot->SetInput( croppedImage );
+	extractFilterBot->SetDirectionCollapseToIdentity(); // This is required.
+
+	//sitk::Show( sitk::Image( extractFilterBot->GetOutput() ) );
+	extractFilterBot->Update();
+
+	SliceImageType::Pointer botImage = SliceImageType::New();
+	botImage = extractFilterBot->GetOutput();
+	printf("\nBottom image\n");
+	printf("Bottom image size %d %d\n", botImage->GetLargestPossibleRegion().GetSize()[0], botImage->GetLargestPossibleRegion().GetSize()[1]);
+
+	ResampleFilterType::Pointer resamplerBot = ResampleFilterType::New();
+	resamplerBot->SetTransform( cropShift );	
+	resamplerBot->SetInterpolator( interpolator );	
+	resamplerBot->SetSize( croppedImageSize );
+	resamplerBot->SetOutputOrigin( newOrigin );
+	resamplerBot->SetDefaultPixelValue( 0 );
+	resamplerBot->SetInput( extractFilterBot->GetOutput() );
+	
+	//sitk::Show( sitk::Image( resampler->GetOutput() ) );
+	resamplerBot->Update();	
+
+	SliceImageType::Pointer botImageShifted = resamplerBot->GetOutput();
+
+	//
+	// Create Middle Section
+	//
 	AddFilterType::Pointer addFilter = AddFilterType::New();
+	addFilter->SetInput1( topImageShifted );
+	addFilter->SetInput2( botImageShifted );
+	addFilter->Update();
 
-	addFilter->SetInput1( botSection );
-	addFilter->SetInput2( topSection );
-
-	SliceImageType::Pointer midSection = SliceImageType::New();
-	midSection = addFilter->GetOutput();
-	sitk::Show( sitk::Image( midSection ) );
+	SliceImageType::Pointer brightImage = SliceImageType::New();
+	brightImage = addFilter->GetOutput();
+	//sitk::Show( sitk::Image( brightImage ) );
 	printf("\nTop and bottom merged\n");
 
-	
-	//---------------------------
-	// Create image section sides
-	//---------------------------
-
-	/*	
 	//
 	// Set crop region to black 0
 	//
-	SliceImageType::RegionTSype region;
-	SliceImageType::IndexType start;
-	start[0] = topX1+newOrigin[0];
-	start[1] = topY1+newOrigin[1];
+	
+	SliceImageType::IndexType topStart2;
+	topStart2[0] = topX1;//+screenX1;
+	topStart2[1] = topY1;//+screenY1; 
+	SliceImageType::SizeType topSize2;
+	topSize2[0] = topX2-topX1;
+	topSize2[1] = topY2-topY1;
+ 	SliceImageType::RegionType topRegion;
+	topRegion.SetSize( topSize2 );
+	topRegion.SetIndex( topStart2 );
+	
+	
+	itk::ImageRegionIterator<SliceImageType> topImageIterator( clonedImage,topRegion );
  
-	SliceImageType::SizeType size;
-	size[0] = topX2-topX1;
-	size[1] = topY2-topY1;
- 
-	region.SetSize( size );
-	region.SetIndex( start );
-
-	itk::ImageRegionIterator<SliceImageType> imageIterator1(croppedImage,region);
- 
-	while(!imageIterator1.IsAtEnd())
+	while(!topImageIterator.IsAtEnd())
     {
-		SliceImageType::PixelType pixel = 0;		
-		imageIterator1.Set( pixel ); 
-		++imageIterator1;
+		topImageIterator.Set( 0 ); 
+		//SliceImageType::PixelType val = topImageIterator.Get();
+		//std::cout << (int)val << std::endl;
+		++topImageIterator;
 	}
 
 	printf("\nDone iterating\n");
-	sitk::Show( sitk::Image(croppedImage) );
+	printf("\nDark image\n");
+	printf("Dark image size %d %d\n", clonedImage->GetLargestPossibleRegion().GetSize()[0], clonedImage->GetLargestPossibleRegion().GetSize()[1]);
+
+	sitk::Image sitkImageOut = sitk::Image( clonedImage );
+	sitk::Show( sitkImageOut );
 	
 
-	start[0] = botX1+newOrigin[0];
-	start[1] = botY1+newOrigin[1];
- 	size[0] = botX2-botX1;
-	size[1] = botY2-botY1;
-	region.SetSize( size );
-	region.SetIndex( start );
-
-	itk::ImageRegionIterator<SliceImageType> imageIterator2(sideSection,region);
+	/*
+	SliceImageType::IndexType botStart;
+	botStart[0] = botX1+newOrigin[0];
+	botStart[1] = botY1+newOrigin[1];
+	SliceImageType::SizeType botSize;
+ 	botSize[0] = botX2-botX1;
+	botSize[1] = botY2-botY1;
+ 	SliceImageType::RegionType botRegion;
+	botRegion.SetSize( botSize );
+	botRegion.SetIndex( botStart );
+	
+	itk::ImageRegionIterator<SliceImageType> botImageIterator( clonedImage,desiredRegionBot ); //botRegion );
  
-	while(!imageIterator2.IsAtEnd())
+	while(!botImageIterator.IsAtEnd())
     {
 		SliceImageType::PixelType pixel = 0;		
-		imageIterator2.Set( pixel ); 
-		++imageIterator1;
+		botImageIterator.Set( pixel ); 
+		++botImageIterator;
 	}
 
-	sitk::Show( sitk::Image(sideSection) );	
+	sitk::Show( sitk::Image( clonedImage ) );	
 
 	printf("\nSides cropped out.\n");
+
 	*/
-
-
-	//
-	// StatisticsImageFilter
-	//
-	typedef itk::StatisticsImageFilter< SliceImageType > StatisticsFilterType;
-	StatisticsFilterType::Pointer midStatisticsFilter = StatisticsFilterType::New();
-	midStatisticsFilter->SetInput( midSection );
-	midStatisticsFilter->Update();
-  
-	printf("Max: %f\nMin: %f\nMean: %f\nSD: %f\n\n", 
-			midStatisticsFilter->GetMaximum(), midStatisticsFilter->GetMinimum(), 
-			midStatisticsFilter->GetMean(), midStatisticsFilter->GetSigma());
-		
-
-  
-
-  
-	
-  
+	/*
 	//
 	// MedianImageFilter 
-	// blurs input image to remove speckles and artifacts
 	//
-	if (filterType.compare("median") == 0)
-	{
-	typedef itk::MedianImageFilter< SliceImageType, SliceImageType >  MedianFilterType;
 	MedianFilterType::Pointer medianFilter = MedianFilterType::New();  
-	medianFilter->SetInput( midSection ); 
-	medianFilter->SetRadius( atof( argv[2] ) );
+	medianFilter->SetInput( inputImage ); 
+	medianFilter->SetRadius( atoi( argv[2] ) );
 	medianFilter->Update();
-
+  
+  
+	SliceImageType::Pointer medianImage = medianFilter->GetOutput();
+	printf("medianImage size %d %d\n", medianImage->GetLargestPossibleRegion().GetSize()[0], medianImage->GetLargestPossibleRegion().GetSize()[1] );
+	printf("medianImage spacing %f %f\n", medianImage->GetSpacing()[0], medianImage->GetSpacing()[1] );
+	printf("medianImage origin %f %f\n", medianImage->GetOrigin()[0], medianImage->GetOrigin()[1] );
+   
+	// Show image
 	sitk::Show( sitk::Image( medianFilter->GetOutput() ) );
-	}
-
-  
-	//
-	// RecursiveGaussianImageFilter
-	//  
-	if (filterType.compare("gaussian") == 0)
-	{
-	typedef itk::RecursiveGaussianImageFilter< SliceImageType, SliceImageType > GaussianFilterType;
-	GaussianFilterType::Pointer gaussianFilterX = GaussianFilterType::New();
-
-	gaussianFilterX->SetSigma( atof(argv[2]) ); 
-	gaussianFilterX->SetDirection( 0 ); 
-	gaussianFilterX->SetNormalizeAcrossScale( true );
-
-	gaussianFilterX->SetInput( midSection );
-	gaussianFilterX->Update();
-
-	GaussianFilterType::Pointer gaussianFilterY = GaussianFilterType::New();
-
-	gaussianFilterY->SetSigma( atof(argv[2]) ); 
-	gaussianFilterY->SetDirection( 1 ); 
-	gaussianFilterY->SetNormalizeAcrossScale( true );
-
-	gaussianFilterY->SetInput( gaussianFilterX->GetOutput() );
-	gaussianFilterY->Update();
-
-	printf("\nGaussian blur %f\n", atof(argv[2]) );
-	sitk::Show( sitk::Image( gaussianFilterY->GetOutput() ) );
-	}
-  
-
-	//
-	// SigmoidImageFilter
-	//
-  
-	if (filterType.compare("sigmoid") == 0)
-	{
-	typedef itk::SigmoidImageFilter< SliceImageType, SliceImageType > SigmoidFilterType;
-	SigmoidFilterType::Pointer sigmoid = SigmoidFilterType::New();
-	sigmoid->SetOutputMinimum( 0.0 );
-	sigmoid->SetOutputMaximum( 1.0 );
-	sigmoid->SetBeta( atof( argv[2] ) );
-	sigmoid->SetAlpha( -atof( argv[3] ) );
-  
-	sigmoid->SetInput( midSection );
-	sigmoid->Update();
-  
-	sitk::Show( sitk::Image( sigmoid->GetOutput() ) );
-
-	StatisticsFilterType::Pointer winStatisticsFilter = StatisticsFilterType::New();
-	winStatisticsFilter->SetInput( sigmoid->GetOutput() );
-	winStatisticsFilter->Update();
-  
-	printf("\nMidSection after windowing \nMax: %f\nMin: %f\nMean: %f\nSD: %f\n\n", 
-			winStatisticsFilter->GetMaximum(), winStatisticsFilter->GetMinimum(), 
-			winStatisticsFilter->GetMean(), winStatisticsFilter->GetSigma());
-
-	}
-  
-	//
-	// IntensityWindowImageFilter
-	//
-	if (filterType.compare("window") == 0)
-	{
-	typedef itk::IntensityWindowingImageFilter< SliceImageType, SliceImageType >  IntensityFilterType;
-	IntensityFilterType::Pointer intensityWindowing = IntensityFilterType::New();
-
-	intensityWindowing->SetWindowMinimum( atof( argv[2] ) );
-	intensityWindowing->SetWindowMaximum( atof( argv[3] ) );
-
-	intensityWindowing->SetOutputMinimum( 0 );
-	intensityWindowing->SetOutputMaximum( 255 ); // floats but in the range of chars.
-
-	intensityWindowing->SetInput( midSection );
-
-	sitk::Show( sitk::Image( intensityWindowing->GetOutput() ) );
-	}
-
-	/*
-	sitk::ImageFileWriter writer;
-	writer.SetFileName( "C:\\Users\\yingying\\Desktop\\test181.png" );
-	writer.Execute( thresholder->GetOutput() );
-	*/
-	/*
-	itkImage = dynamic_cast <SliceImageType*> ( thresholder->GetOutput().GetITKBase() );
-	outputOrigin = itkImage->GetOrigin();
-	printf("origin %f %f", outputOrigin[0], outputOrigin[1] );
 	*/
 
   return EXIT_SUCCESS;
