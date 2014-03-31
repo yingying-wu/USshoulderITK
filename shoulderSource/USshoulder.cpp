@@ -32,6 +32,11 @@ radius of MedianImageFilter = 6
 #include "itkRegionOfInterestImageFilter.h"
 #include "itkImageDuplicator.h"
 
+#include "itkGaussianOperator.h"
+#include "itkNeighborhoodIterator.h"
+#include "itkNeighborhoodInnerProduct.h"
+#include "itkLaplacianOperator.h"
+
 const double PI = 3.14159265359;
 namespace sitk = itk::simple;
 typedef itk::Image< float, 2 > SliceImageType;
@@ -39,19 +44,13 @@ typedef itk::Image< float, 2 > SliceImageType;
 
 int main( int argc, char * argv[] )
 {
-  if( argc < 2 )
-    {
-    std::cerr << "Usage: " << std::endl;
-    std::cerr << argv[0] << " USshoulder.exe"<< std::endl;
-    return EXIT_FAILURE;
-    }
 
   // declare typedefs here
   	typedef itk::ImageFileReader<SliceImageType> SliceReader;	
 	typedef itk::ImageFileWriter< SliceImageType > WriterType;
 
-	typedef itk::MedianImageFilter< SliceImageType, SliceImageType >  MedianFilterType;
-	typedef itk::RecursiveGaussianImageFilter< SliceImageType, SliceImageType > GaussianFilterType;
+	//typedef itk::MedianImageFilter< SliceImageType, SliceImageType >  MedianFilterType;
+	//typedef itk::RecursiveGaussianImageFilter< SliceImageType, SliceImageType > GaussianFilterType;
 	typedef itk::SigmoidImageFilter< SliceImageType, SliceImageType > SigmoidFilterType;
 	typedef itk::IntensityWindowingImageFilter< SliceImageType, SliceImageType >  IntensityFilterType;
 
@@ -61,6 +60,18 @@ int main( int argc, char * argv[] )
 	typedef itk::AddImageFilter < SliceImageType, SliceImageType > AddFilterType;
 	typedef itk::RegionOfInterestImageFilter< SliceImageType, SliceImageType > ROIType;
 	typedef itk::ImageDuplicator< SliceImageType > DuplicatorType;
+	
+	typedef itk::GaussianOperator< SliceImageType::PixelType, 2> GaussianOperatorType;
+	typedef itk::ImageRegionIterator<SliceImageType> ImageIteratorType;
+	typedef itk::NeighborhoodIterator<SliceImageType> NeighborhoodIteratorType;
+	typedef itk::NeighborhoodInnerProduct< SliceImageType> InnerProductType; 
+
+	// one-off functions that keep being reused
+	typedef itk::StatisticsImageFilter< SliceImageType > StatisticsFilterType;
+	StatisticsFilterType::Pointer statisticsFilter = StatisticsFilterType::New();
+
+	typedef itk::LinearInterpolateImageFunction<SliceImageType, double> InterpolatorType;
+	InterpolatorType::Pointer interpolator = InterpolatorType::New();
 
 
 	//-----------------------
@@ -68,7 +79,6 @@ int main( int argc, char * argv[] )
 	//-----------------------
 
 	std::string filename = "c:\\miia\\yingyinw\\USshoulder\\shoulderSource\\yy_3_26_2014_36.png";
-	std::string filterType = argv[1];
   
 	SliceReader::Pointer reader = SliceReader::New();
 	reader->SetFileName(filename);
@@ -119,19 +129,14 @@ int main( int argc, char * argv[] )
 	croppedImageSize[1] = croppedImage->GetLargestPossibleRegion().GetSize()[1];
 	//printf("Cropped image size %d %d\n", croppedImageSize[0], croppedImageSize[1]);
 
+	//----------------------------
+	// hard coded crop imformation
+	//----------------------------
 
-	//--------------
-	// Bright region
-	//--------------
-
-	//----------------------
-	// Crop Top Bright Image 
-
-	// hard code screen borders
-	int topX1 = 115;
-	int topX2 = 285;
-	int topY1 = 1;
-	int topY2 = 181;
+	int topX1 = 114;
+	int topX2 = 286;
+	int topY1 = 0;
+	int topY2 = 180;
 
 	SliceImageType::IndexType topStart;
 	topStart[0] = topX1;
@@ -140,6 +145,27 @@ int main( int argc, char * argv[] )
 	topSize[0] = topX2 - topX1;
 	topSize[1] = topY2 - topY1; 
 	SliceImageType::RegionType desiredRegionTop( topStart, topSize );
+
+	int botX1 = 97;
+	int botX2 = 302;
+	int botY1 = 180;
+	int botY2 = 380;
+
+	SliceImageType::IndexType botStart;
+	botStart[0] = botX1;
+	botStart[1] = botY1; 
+	SliceImageType::SizeType botSize;
+	botSize[0] = botX2 - botX1;
+	botSize[1] = botY2 - botY1; 
+	SliceImageType::RegionType desiredRegionBot( botStart, botSize );
+
+
+	//--------------
+	// Bright region
+	//--------------
+
+	//----------------------
+	// Crop Top Bright Image 
 
 	ROIType::Pointer ROITop = ROIType::New();
 	ROITop->SetRegionOfInterest( desiredRegionTop );
@@ -160,10 +186,6 @@ int main( int argc, char * argv[] )
 	topTranslation[1] = 0;//-int( topX2 );
 	topCropShift->Translate( topTranslation );
 	//printf("\nBottom section translation x:%f y:%f\n", translation2[0], translation2[1]);		
-
-	// interpolator
-	typedef itk::LinearInterpolateImageFunction<SliceImageType, double> InterpolatorType;
-	InterpolatorType::Pointer interpolator = InterpolatorType::New();
 
 	SliceImageType::PointType topOrigin;
 	topOrigin[0] = screenX1;//-int( topTranslation[0] );
@@ -187,22 +209,6 @@ int main( int argc, char * argv[] )
 		
 	//-------------------------
 	// Crop Bottom Bright Image
-	
-	//sitk::Show( sitk::Image( croppedImage ) );
-
-	// hard code screen borders
-	int botX1 = 98;
-	int botX2 = 303;
-	int botY1 = 181;
-	int botY2 = 380;
-
-	SliceImageType::IndexType botStart;
-	botStart[0] = botX1;
-	botStart[1] = botY1; 
-	SliceImageType::SizeType botSize;
-	botSize[0] = botX2 - botX1;
-	botSize[1] = botY2 - botY1; 
-	SliceImageType::RegionType desiredRegionBot( botStart, botSize );
 
 	ROIType::Pointer ROIBot = ROIType::New();
 	ROIBot->SetRegionOfInterest( desiredRegionBot );
@@ -219,14 +225,14 @@ int main( int argc, char * argv[] )
 	// translate	
 	TransformType::Pointer botCropShift = TransformType::New();
 	TransformType::OutputVectorType botTranslation;
-	botTranslation[0] = 0;//-int( botX1 );
-	botTranslation[1] = 0;//-int( botX2 );
+	botTranslation[0] = 0;
+	botTranslation[1] = 0;
 	botCropShift->Translate( botTranslation );
 	//printf("\nBottom section translation x:%f y:%f\n", translation2[0], translation2[1]);		
 
 	SliceImageType::PointType botOrigin;
-	botOrigin[0] = screenX1;//-int( botTranslation[0] );
-	botOrigin[1] = screenY1;//-int( botTranslation[1] );
+	botOrigin[0] = screenX1;
+	botOrigin[1] = screenY1;
 
 	ResampleFilterType::Pointer resamplerBot = ResampleFilterType::New();
 	resamplerBot->SetTransform( botCropShift );	
@@ -255,10 +261,49 @@ int main( int argc, char * argv[] )
 	SliceImageType::Pointer brightImage = SliceImageType::New();
 	brightImage = addFilter->GetOutput();
 
-	sitk::Show( sitk::Image( brightImage ) );
+	//sitk::Show( sitk::Image( brightImage ), "brightImage" );
 	printf("\nTop and bottom merged\n");
 	printf("Bright image cropped out\n");
 	
+
+	//-------------------------------
+	// Image processing bright region
+	//-------------------------------
+
+	SliceImageType::Pointer brightImageProcessed = SliceImageType::New();
+		
+	statisticsFilter->SetInput( brightImage );
+	statisticsFilter->Update();
+
+	printf("\nBright image statistics\n");
+	printf("Max: %f\nMin: %f\nMean: %f\nSD: %f\n\n", 
+			statisticsFilter->GetMaximum(), statisticsFilter->GetMinimum(), 
+			statisticsFilter->GetMean(), statisticsFilter->GetSigma());
+
+	//-------------------
+	// SigmoidImageFilter
+  
+	SigmoidFilterType::Pointer sigmoidTop = SigmoidFilterType::New();
+	sigmoidTop->SetOutputMinimum( 0 );
+	sigmoidTop->SetOutputMaximum( 255 );
+	sigmoidTop->SetBeta( 110 );
+	sigmoidTop->SetAlpha( 50 );
+  
+	sigmoidTop->SetInput( brightImage );
+	sigmoidTop->Update();
+  
+	SliceImageType::Pointer sigmoidImageTop = SliceImageType::New();
+	sigmoidImageTop = sigmoidTop->GetOutput();
+	//sitk::Show( sitk::Image( sigmoidImageTop ), "sigmoidImageTop");
+
+	statisticsFilter->SetInput( sigmoidImageTop );
+	statisticsFilter->Update();
+  
+	printf("\nBright image statistics after sigmoid\n");
+	printf("Max: %f\nMin: %f\nMean: %f\nSD: %f\n\n", 
+			statisticsFilter->GetMaximum(), statisticsFilter->GetMinimum(), 
+			statisticsFilter->GetMean(), statisticsFilter->GetSigma());
+
 
 	//-----------
 	//Dark region
@@ -271,16 +316,16 @@ int main( int argc, char * argv[] )
     duplicator->SetInputImage(croppedImage);
     duplicator->Update();
 
-    SliceImageType::Pointer clonedImage = SliceImageType::New();
-	clonedImage = duplicator->GetOutput();
+    SliceImageType::Pointer darkImage = SliceImageType::New();
+	darkImage = duplicator->GetOutput();
 
 	printf("\nCloned image\n");
-	printf("Cloned image size %d %d\n", clonedImage->GetLargestPossibleRegion().GetSize()[0], clonedImage->GetLargestPossibleRegion().GetSize()[1]);
+	printf("Cloned image size %d %d\n", darkImage->GetLargestPossibleRegion().GetSize()[0], darkImage->GetLargestPossibleRegion().GetSize()[1]);
 
 	//----------
 	// Top Image
 		
-	itk::ImageRegionIterator<SliceImageType> topImageIterator( clonedImage,desiredRegionTop );
+	itk::ImageRegionIterator<SliceImageType> topImageIterator( darkImage,desiredRegionTop );
  
 	while(!topImageIterator.IsAtEnd())
     {
@@ -288,13 +333,13 @@ int main( int argc, char * argv[] )
 		++topImageIterator;
 	}
 
-	//sitk::Show( sitk::Image( clonedImage ) );
+	//sitk::Show( sitk::Image( darkImage ) );
 	printf("\nDone iterating bottom\n");
 	
 	//-------------
 	// Bottom Image
 
-	itk::ImageRegionIterator<SliceImageType> botImageIterator( clonedImage,desiredRegionBot );
+	itk::ImageRegionIterator<SliceImageType> botImageIterator( darkImage,desiredRegionBot );
  
 	while(!botImageIterator.IsAtEnd())
     {	
@@ -302,128 +347,224 @@ int main( int argc, char * argv[] )
 		++botImageIterator;
 	}
 
-	//sitk::Show( sitk::Image( clonedImage ) );			
+
+	//sitk::Show( sitk::Image( darkImage ), "darkImage" );			
 	printf("\nDone iterating bottom\n");
 	printf("\nDark image\n");
-	printf("Dark image size %d %d\n", clonedImage->GetLargestPossibleRegion().GetSize()[0], clonedImage->GetLargestPossibleRegion().GetSize()[1]);
+	printf("Dark image size %d %d\n", darkImage->GetLargestPossibleRegion().GetSize()[0], darkImage->GetLargestPossibleRegion().GetSize()[1]);
 	
 	printf("\nDark image cropped out.\n");
-	
-
-	//-------------------------------
-	// Image processing bright region
-	//-------------------------------
-
-	SliceImageType::Pointer brightImageProcessed = SliceImageType::New();
-
-	//-------
-	// Median
-
-	if (filterType.compare("median") == 0)
-	{
-	MedianFilterType::Pointer medianFilter = MedianFilterType::New();  
-	medianFilter->SetInput( brightImage ); 
-	medianFilter->SetRadius( atoi( argv[2] ) );
-	medianFilter->Update();
-  
-  
-	SliceImageType::Pointer medianImage = medianFilter->GetOutput();
-	printf("medianImage size %d %d\n", medianImage->GetLargestPossibleRegion().GetSize()[0], medianImage->GetLargestPossibleRegion().GetSize()[1] );
-	
-	sitk::Show( sitk::Image( medianFilter->GetOutput() ) );	
-	brightImageProcessed = medianFilter->GetOutput();
-
-	}
-
-	//----------------------
-	// StatisticsImageFilter
-	
-	typedef itk::StatisticsImageFilter< SliceImageType > StatisticsFilterType;
-	StatisticsFilterType::Pointer midStatisticsFilter = StatisticsFilterType::New();
-	midStatisticsFilter->SetInput( brightImage );
-	midStatisticsFilter->Update();
-
-  
-	printf("Max: %f\nMin: %f\nMean: %f\nSD: %f\n\n", 
-			midStatisticsFilter->GetMaximum(), midStatisticsFilter->GetMinimum(), 
-			midStatisticsFilter->GetMean(), midStatisticsFilter->GetSigma());
 
 	//-----------------------------
-	// RecursiveGaussianImageFilter
+	// Image processing dark region
+	//-----------------------------
 
-	if (filterType.compare("gaussian") == 0)
-	{
-	GaussianFilterType::Pointer gaussianFilterX = GaussianFilterType::New();
+	SliceImageType::Pointer darkImageProcessed = SliceImageType::New();
 
-	gaussianFilterX->SetSigma( atof(argv[2]) ); 
-	gaussianFilterX->SetDirection( 0 ); 
-	gaussianFilterX->SetNormalizeAcrossScale( true );
+	statisticsFilter->SetInput( darkImage );
+	statisticsFilter->Update();
 
-	gaussianFilterX->SetInput( brightImage );
-	gaussianFilterX->Update();
-
-	GaussianFilterType::Pointer gaussianFilterY = GaussianFilterType::New();
-
-	gaussianFilterY->SetSigma( atof(argv[2]) ); 
-	gaussianFilterY->SetDirection( 1 ); 
-	gaussianFilterY->SetNormalizeAcrossScale( true );
-
-	gaussianFilterY->SetInput( gaussianFilterX->GetOutput() );
-	gaussianFilterY->Update();
-
-	printf("\nGaussian blur %f\n", atof(argv[2]) );
-	sitk::Show( sitk::Image( gaussianFilterY->GetOutput() ) );
-	brightImageProcessed = gaussianFilterY->GetOutput();
-	}
-  
+	printf("\nDark image statistics\n");
+	printf("Max: %f\nMin: %f\nMean: %f\nSD: %f\n\n", 
+			statisticsFilter->GetMaximum(), statisticsFilter->GetMinimum(), 
+			statisticsFilter->GetMean(), statisticsFilter->GetSigma());
 
 	//-------------------
 	// SigmoidImageFilter
   
-	if (filterType.compare("sigmoid") == 0)
-	{
-	SigmoidFilterType::Pointer sigmoid = SigmoidFilterType::New();
-	sigmoid->SetOutputMinimum( 0.0 );
-	sigmoid->SetOutputMaximum( 1.0 );
-	sigmoid->SetBeta( atof( argv[2] ) );
-	sigmoid->SetAlpha( atof( argv[3] ) );
+	SigmoidFilterType::Pointer sigmoidBot = SigmoidFilterType::New();
+	sigmoidBot->SetOutputMinimum( 0 );
+	sigmoidBot->SetOutputMaximum( 255 );
+	sigmoidBot->SetBeta( 50 );
+	sigmoidBot->SetAlpha( 20 );
   
-	sigmoid->SetInput( brightImage );
-	sigmoid->Update();
+	sigmoidBot->SetInput( darkImage );
+	sigmoidBot->Update();
   
-	sitk::Show( sitk::Image( sigmoid->GetOutput() ) );
-	brightImageProcessed = sigmoid->GetOutput();
+	SliceImageType::Pointer sigmoidImageBot = SliceImageType::New();
+	sigmoidImageBot = sigmoidBot->GetOutput();
+	//sitk::Show( sitk::Image( sigmoidImageBot ), "sigmoidImageBot");
 
-	StatisticsFilterType::Pointer winStatisticsFilter = StatisticsFilterType::New();
-	winStatisticsFilter->SetInput( sigmoid->GetOutput() );
-	winStatisticsFilter->Update();
+	statisticsFilter->SetInput( sigmoidImageBot );
+	statisticsFilter->Update();
   
-	printf("\nMidSection after windowing \nMax: %f\nMin: %f\nMean: %f\nSD: %f\n\n", 
-			winStatisticsFilter->GetMaximum(), winStatisticsFilter->GetMinimum(), 
-			winStatisticsFilter->GetMean(), winStatisticsFilter->GetSigma());
+	printf("\nDark image statistics after sigmoid\n");
+	printf("Max: %f\nMin: %f\nMean: %f\nSD: %f\n\n", 
+			statisticsFilter->GetMaximum(), statisticsFilter->GetMinimum(), 
+			statisticsFilter->GetMean(), statisticsFilter->GetSigma());
 
-	}
-  
-	//---------------------------
-	// IntensityWindowImageFilter
 
-	if (filterType.compare("window") == 0)
-	{
-	IntensityFilterType::Pointer intensityWindowing = IntensityFilterType::New();
+	//-------------------
+	// Create Final Image
+	//-------------------
 
-	intensityWindowing->SetWindowMinimum( atof( argv[2] ) );
-	intensityWindowing->SetWindowMaximum( atof( argv[3] ) );
+	AddFilterType::Pointer addFilterFinal = AddFilterType::New();
+	addFilterFinal->SetInput1( sigmoidImageTop );
+	addFilterFinal->SetInput2( sigmoidImageBot );
+	addFilterFinal->Update();
 
-	intensityWindowing->SetOutputMinimum( 0 );
-	intensityWindowing->SetOutputMaximum( 255 ); // floats but in the range of chars.
+	SliceImageType::Pointer mergedImage = SliceImageType::New();
+	mergedImage = addFilterFinal->GetOutput();
 
-	intensityWindowing->SetInput( brightImage );
+	//sitk::Show( sitk::Image( mergedImage ), "mergedImage" );
+	printf("Images merged\n");
 
-	sitk::Show( sitk::Image( intensityWindowing->GetOutput() ) );
-	brightImageProcessed = intensityWindowing->GetOutput();
-	}
+	//--------------------
+	// windowing threshold
 
+	IntensityFilterType::Pointer windowBot = IntensityFilterType::New();
+	windowBot->SetOutputMinimum( 0 );
+	windowBot->SetOutputMaximum( 255 );
+	windowBot->SetWindowMinimum( 0 );
+	windowBot->SetWindowMaximum(255);
+	windowBot->SetInput( mergedImage );
+	windowBot->Update();
 	
+	SliceImageType::Pointer windowImage = SliceImageType::New();
+	windowImage = windowBot->GetOutput();
+
+	//sitk::Show( sitk::Image( windowImage ), "windowImage");
+	printf("Images thresholded\n");
+	
+	//-----------------
+	// get rid of lines
+	//-----------------
+
+	duplicator->SetInputImage(windowImage);
+    duplicator->Update();
+    SliceImageType::Pointer windowImageOut = SliceImageType::New();
+	windowImageOut = duplicator->GetOutput();
+	
+	int width = 5;
+	int space = 3; 
+	double gaussianRadius = 6;
+
+	GaussianOperatorType gaussianOperatorH;
+	gaussianOperatorH.SetDirection(0); // Create the operator for the X axis derivative
+	gaussianOperatorH.CreateToRadius( gaussianRadius );
+	gaussianOperatorH.SetVariance( 3*gaussianRadius );
+	GaussianOperatorType gaussianOperatorV;
+	gaussianOperatorV.SetDirection(1); // Create the operator for the X axis derivative
+	gaussianOperatorV.CreateToRadius( gaussianRadius );
+	gaussianOperatorV.SetVariance( 3*gaussianRadius );
+	InnerProductType IP;
+
+	//v1 top left
+	SliceImageType::IndexType v1Start;
+	v1Start[0] = topX1 - width;
+	v1Start[1] = topY1; 
+	SliceImageType::SizeType v1Size;
+	v1Size[0] = 2*width;
+	v1Size[1] = (topY2 - topY1) + space;
+	SliceImageType::RegionType v1( v1Start, v1Size );	
+
+	ImageIteratorType itv1( windowImageOut, v1 );
+	NeighborhoodIteratorType outv1( gaussianOperatorH.GetRadius(), windowImage, v1 );
+	
+	outv1.GoToBegin();
+	for (itv1.GoToBegin(); !itv1.IsAtEnd(); ++itv1, ++outv1)
+	{
+		itv1.Set( IP( outv1, gaussianOperatorH) );
+	}
+	//sitk::Show( sitk::Image( windowImageOut ), "windowImageOut");
+
+	//v2 top right
+	SliceImageType::IndexType v2Start;
+	v2Start[0] = topX2 - width;
+	v2Start[1] = topY1; 
+	SliceImageType::SizeType v2Size;
+	v2Size[0] = 2*width;
+	v2Size[1] = (topY2 - topY1) + space;
+	SliceImageType::RegionType v2( v2Start, v2Size );	
+
+	ImageIteratorType itv2( windowImageOut, v2 );
+	NeighborhoodIteratorType outv2( gaussianOperatorH.GetRadius(), windowImageOut, v2 );
+	
+	outv2.GoToBegin();
+	for (itv2.GoToBegin(); !itv2.IsAtEnd(); ++itv2, ++outv2)
+	{
+		itv2.Set( IP( outv2, gaussianOperatorH) );
+	}
+	//sitk::Show( sitk::Image( windowImageOut ), "windowImageOut");
+
+	//v3 bot left
+	SliceImageType::IndexType v3Start;
+	v3Start[0] = botX1 - width;
+	v3Start[1] = botY1 - space; 
+	SliceImageType::SizeType v3Size;
+	v3Size[0] = 2*width;
+	v3Size[1] = (botY2 - botY1) + space;
+	SliceImageType::RegionType v3( v3Start, v3Size );	
+
+	ImageIteratorType itv3( windowImageOut, v3 );
+	NeighborhoodIteratorType outv3( gaussianOperatorH.GetRadius(), windowImageOut, v3 );
+	
+	outv3.GoToBegin();
+	for (itv3.GoToBegin(); !itv3.IsAtEnd(); ++itv3, ++outv3)
+	{
+		itv3.Set( IP( outv3, gaussianOperatorH) );
+	}
+	//sitk::Show( sitk::Image( windowImageOut ), "windowImageOut");
+
+	//v4 bot right
+	SliceImageType::IndexType v4Start;
+	v4Start[0] = botX2 - width;
+	v4Start[1] = botY1 - space; 
+	SliceImageType::SizeType v4Size;
+	v4Size[0] = 2*width;
+	v4Size[1] = (botY2 - botY1) + space;
+	SliceImageType::RegionType v4( v4Start, v4Size );	
+
+	ImageIteratorType itv4( windowImageOut, v4 );
+	NeighborhoodIteratorType outv4( gaussianOperatorH.GetRadius(), windowImageOut, v4 );
+	
+	outv4.GoToBegin();
+	for (itv4.GoToBegin(); !itv4.IsAtEnd(); ++itv4, ++outv4)
+	{
+		itv4.Set( IP( outv4, gaussianOperatorH) );
+	}
+	//sitk::Show( sitk::Image( windowImageOut ), "windowImageOut");
+
+	// h1 top left
+	SliceImageType::IndexType h1Start;
+	h1Start[0] = botX1 - space;
+	h1Start[1] = botY1 - width; 
+	SliceImageType::SizeType h1Size;
+	h1Size[0] = (topX1 - botX1) + 2*space;
+	h1Size[1] = 2*width;
+	SliceImageType::RegionType h1( h1Start, h1Size );	
+
+	ImageIteratorType ith1( windowImageOut, h1 );
+	NeighborhoodIteratorType outh1( gaussianOperatorV.GetRadius(), windowImageOut, h1 );
+	
+	outh1.GoToBegin();
+	for (ith1.GoToBegin(); !ith1.IsAtEnd(); ++ith1, ++outh1)
+	{
+		ith1.Set( IP( outh1, gaussianOperatorV) );
+	}
+	//sitk::Show( sitk::Image( windowImageOut ), "windowImageOut");
+
+	// h1 top left
+	SliceImageType::IndexType h2Start;
+	h2Start[0] = topX2 - space;
+	h2Start[1] = topY2 - width; 
+	SliceImageType::SizeType h2Size;
+	h2Size[0] = (botX2 - topX2) + 2*space;
+	h2Size[1] = 2*width;
+	SliceImageType::RegionType h2( h2Start, h2Size );	
+
+	ImageIteratorType ith2( windowImageOut, h2 );
+	NeighborhoodIteratorType outh2( gaussianOperatorV.GetRadius(), windowImageOut, h2 );
+	
+	outh2.GoToBegin();
+	for (ith2.GoToBegin(); !ith2.IsAtEnd(); ++ith2, ++outh2)
+	{
+		ith2.Set( IP( outh2, gaussianOperatorV) );
+	}
+	//sitk::Show( sitk::Image( windowImageOut ), "windowImageOut");
+
+
+	sitk::Show( sitk::Image( windowImageOut ), "windowImageOut");
 
   return EXIT_SUCCESS;
 }
