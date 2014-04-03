@@ -3,6 +3,13 @@ Created by: Ying Ying Wu
 Date: April 2014
 Project: Ultrasound Imaging of Shoulder (2D to 3D reconstruction
 
+// Some notes
+/ input format: usshoulder.exe betaBright alphaBright betaDark alphaDark region
+/ Takes in beta and alpha value for dark and bright sections
+/ Windowing threshold scales the two sections relative to each other
+/ Region "dark" "bright" and "all" gives you the option to show either only the 
+/ dark region, or only the bright region or only the resulting images
+
 Parameters for image sessions
 "yy_forearm_trial2_4_2_2014" series
 - screen X1 = 190; Y1 = 31; X2 = 586; Y2 = 411;
@@ -25,10 +32,12 @@ Parameters for image sessions
 - bright sigmoid beta = 110; alpha = 50; 
 - dark sigmoid beta = 50; alpha = 20;
 
-"yy_forearm_trial2_4_2_2014" series
+"shoulder_2_4_2_2014" series
 - screen X1 = 190; Y1 = 31; X2 = 586; Y2 = 411;
-- top	 X1 = 110; Y1 = 1; X2 = 281; Y2 = 182; 
+- top	 X1 = 110; Y1 = 0; X2 = 281; Y2 = 182; 
 - bottom X1 = 94; Y1 = 182; X2 = 299; Y2 = 380;
+- bright sigmoid beta = 140; alpha = 50; 
+- dark sigmoid beta = 90; alpha = 30;
 */
 
 #include <stdio.h>
@@ -106,7 +115,7 @@ int main( int argc, char * argv[] )
 	// Read and process image
 	//-----------------------
 
-	std::string filename = "c:\\miia\\yingyinw\\USshoulder\\shoulderSource\\yy_forearm_trial2_4_2_2014_100.png";
+	std::string filename = "c:\\miia\\yingyinw\\USshoulder\\shoulderSource\\shoulder_4_2_2014_86.png";
 	std::string showWhich = argv[5];
   
 	SliceReader::Pointer reader = SliceReader::New();
@@ -594,6 +603,7 @@ int main( int argc, char * argv[] )
 	//sitk::Show( sitk::Image( windowImageOut ), "windowImageOut");
 
 	if (!showWhich.compare("all")) sitk::Show( sitk::Image( windowImageOut ), "windowImageOut");
+
 
   return EXIT_SUCCESS;
 }
