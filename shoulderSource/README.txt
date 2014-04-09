@@ -29,7 +29,8 @@ README
 * Running the code:
   - image file: hard coded
   - image boundaries: hard coded
-  - input: usshoulder.exe beta_bright alpha_
+  - input: usshoulder.exe beta_bright alpha_bright beta_dark alpha_dark region("bright", "dark", "all")
+  - use "region" to tell program which image to show. bright/dark: show bright/dark region only after contrast. all: show combined final image after windowing
 
 * Evaluation
   - There is still a dark boundary between the dark and bright regions, but because we are reconstructing the volume by taking maximum, the dark region will hopefully be filled in by other image slices
