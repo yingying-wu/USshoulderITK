@@ -1,57 +1,38 @@
-Explanation of pipeline: 
+README
 
-* main cpp file: prostateTRUSwithSnake.cpp
-* data file: Series181.png
+* main cpp file: usshoulder_codeForTesting.cpp
+* data file: shoulder_4_2_2014_86.png 
 
-* aim: to extract contour of prostate from ultrasound images
-  - initial plan was to extract partial contours (i.e. open paths)
-      - the code is still in "prostateTRUS.cpp" source code, but to run this, you need to change the CMakeLists file to include this source code instead
-      - the parameter list for command line 
-          - prostateTRUS.exe (filepath) 12 0.08 2 0.04 0.04 0.08 1 5
-      - documentation is in the word document "parameter_testing.docx" from the start up to and including "partial conclusion"
-  - but it seems like the blurring improves the full contour, so I'm actually looking at active contour (i.e. closed contours) now
+* project:
+  - 3D reconstruction of ultrasound (US) images
 
-* This code has a combination of SimpleITK, ITK and an external polar transform commands
-  - SimpleITK is used to conveniently carry out simple procedures like reading the input image, writing the output image and showing images in imageJ.
-  - IJMacros, itkCartesianToPolarTransform.cpp, itkCartesianToPolarTransform.txx, itkPolarToCartesianTransform.cpp, itkPolarToCartesianTransform.txx are all for implementing polar coordinates.
+* aim: 
+  - to equalize the contrast between bright and dark region of image taken by a slightly malfunctioning US probe 
+  - If we get a better probe, we won't need to do this, except for the first cropping to get the scan region
 
-* The initial part is to blur the image by converting the cartesian coordinates to polar coordinates:
-  - I take the origin at either the probe center or the prostate center to smooth along different directions.
-  - For polar transform to sample correctly, origin has to be first shifted using ChangeInformationImageFilter.
-  - Overall blur is performed with MedianImageFilter to remove speckle and noise. 
-  - Subsequent blurring is performed with RecursiveGaussianImageFilter.
-  - The sequence of blurring is as follows:
-      - Centered at probe, blur along theta,
-      - Centered at prostate, blur along theta,
-      - Centered at probe, blur along radius. 
+* approach:
+  - The input image is the screen capture on the US imaging machine, so the first step is to crop the image to the region of the scan i.e. ignoring patient labels and other information about the scan that is on the machine screen
+  - The bright and dark segments are cropped out to another image of the same size as the region of the scan because they will be later added together. The cropped image are padded with pizel of value 0 so they can be directly added without affecting each other. 
+  - The bright and dark segments are processed separately with the SigmoidImageFilter to get approximately equal contrast (judged by eye). SigmoidImageFilter takes in a beta value (center of sigmoid curve) and an alpha value (spread of curve)
+  - The two segments, after contrast treatment, are added together using the AddImageFilter
+  - The merged image is then windowed to give pixel values between 0 - 255
+  - We then blur the boundary between the two segments using a neighborhood iterator and a GaussianOperator along a thin rectangle fitted about the boundaries
 
-* Then I apply a sequence of filters to extract the contour
-  - CurvatureFlowImageFilter to smooth out jaggy edges
-  - GradientMagnitudeRecursiveGaussianImageFilter to obtain feature input
-  - SigmoidImageFilter
-  - FastMarchingImageFilter with three seed points
-      - (350, 400), (310, 500) and (300, 600)
-  - IntensityWindowImageFilter to get rid of extreme points
-  - BinaryThresholdImageFilter
+* cropping:
+  - boundaries are manually located. the top left corner and the bottom right corner are noted. From experience, even input from the same machine can have changing boundaries...
+  - the RegionOfInterestImageFilter is used instead of the ExtractImageFilter because the ExtractImageFilter does not move the origin of the image and thus doesn't allow images to be added easily
+
+* This code has a combination of SimpleITK, ITK 
+  - SimpleITK is used to conveniently carry out simple procedures like showing images in imageJ where you can create histogram of the pixel values of a specific region
+  - IJMacros was left in from using an external polar coordinates library for prostate image processing. Didn't take it out because the last time I did, cmake complained and I didn't have time to resolve that
 
 * Running the code:
-  - This code currently shows the image and image information for
-    - all iamges for blurring,
-    - speed image for fast marching,
-    - fast marching results
-    - binary thresholding results.
-  - If you want to see any other intermmediate images, just uncomment the short code following every filter/procedure. It will display the image in ImageJ. 
-  - Type this in command line to run "prostateTRUS.exe (filepath) 12 0.04 0.04 0.08 100 0.02 0 1 0.6 220".
-  - Current version does not write file, but only displays images in ImageJ. If you want to save the files, uncomment the last bit at the end about writing.
-
-* Decision making
-  - Lots of tests were carried out to search for the best filter sequence and parameters. They are documented in the word document named "parameter_testing.docx" in this folder.
+  - image file: hard coded
+  - image boundaries: hard coded
+  - input: usshoulder.exe beta_bright alpha_
 
 * Evaluation
-  - It's not very accurate because the obvious contours are not closed and there is "leakage" of the fast marching map
-  - It is also not generic enough to be applied to all images without redoing the parameter tuning
-  - But the blurring allows better visualization of what is the actual contour because it gets rid of the artefacts and noise
+  - There is still a dark boundary between the dark and bright regions, but because we are reconstructing the volume by taking maximum, the dark region will hopefully be filled in by other image slices
 
 * Other files in this folder
-  - ppt for class presentation.
-  - prostateTRUS.cpp is an older version that searches for partial contours without involving active contours.
+  - four different images were tested and the parameters used for the images are recorded at the beginning of the cpp file

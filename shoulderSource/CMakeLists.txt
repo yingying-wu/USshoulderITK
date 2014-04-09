@@ -27,7 +27,7 @@ FOREACH(Package ${Required_Packages})
 ENDFOREACH(Package)
 
 ADD_EXECUTABLE(USshoulder 
-USshoulder.cpp 
+USshoulder_codeForTesting.cpp 
 )
 							 
 TARGET_LINK_LIBRARIES(USshoulder ${ITK_LIBRARIES} ${SimpleITK_LIBRARIES} ${Libraries})

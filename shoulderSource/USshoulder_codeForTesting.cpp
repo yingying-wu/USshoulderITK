@@ -55,8 +55,6 @@ Parameters for image sessions
 
 #include "vnl/vnl_math.h"
 
-#include "itkMedianImageFilter.h"
-#include "itkRecursiveGaussianImageFilter.h"
 #include "itkStatisticsImageFilter.h"
 #include "itkIntensityWindowingImageFilter.h"
 #include "itkSigmoidImageFilter.h"
@@ -82,12 +80,10 @@ typedef itk::Image< float, 2 > SliceImageType;
 int main( int argc, char * argv[] )
 {
 
-  // declare typedefs here
+	// declare typedefs here
   	typedef itk::ImageFileReader<SliceImageType> SliceReader;	
 	typedef itk::ImageFileWriter< SliceImageType > WriterType;
 
-	//typedef itk::MedianImageFilter< SliceImageType, SliceImageType >  MedianFilterType;
-	//typedef itk::RecursiveGaussianImageFilter< SliceImageType, SliceImageType > GaussianFilterType;
 	typedef itk::SigmoidImageFilter< SliceImageType, SliceImageType > SigmoidFilterType;
 	typedef itk::IntensityWindowingImageFilter< SliceImageType, SliceImageType >  IntensityFilterType;
 
